@@ -8,29 +8,38 @@
 #include <ArduinoJson.h>
 
 #include "libs/initWifi/initWifi.h"
+#include "libs/readConfigFile/readConfigFile.h"
 #include "libs/errLeds/errLeds.h"
 // #include "libs/mqtt/mqtt.h" // TODO: Rewrite as a class
 
 #define BME680_I2C_ADDR_LOW 0x77
 
-const char *SPIFFS_SECRETS_PATH = "/.secrets.env"; // Path on the SPIFFS file system intended for SPI NOR flash devices on embedded targets.
+Preferences preferences;
+
+// Create an object of the class Bsec
+Bsec iaqSensor;
+
+String output;
+int LED_BUILTIN = 2;
+
+int const TIMEOUT_MS = 10000;
 
 // Wi-Fi Network Connection Configuration
-String SSID;
-String SSID_PASSWD;
+String ssid;
+String ssid_passwd;
 String hostname = "esp32";
 
 // MQTT Broker IP Address and Login
-String MQTT_SERVER;
-int MQTT_PORT = 1883;
-String MQTT_USER;
-String MQTT_PASS;
-String INFLUXDB_SERVER;
-String INFLUXDB_PORT;
-String INFLUXDB_USER;
-String INFLUXDB_PASS;
+String mqtt_server;
+int mqtt_port;
+String mqtt_user;
+String mqtt_pass;
 
-Preferences preferences;
+// InfluxDB server address and login
+String influxdb_server;
+String influxdb_port;
+String influxdb_user;
+String influxdb_pass;
 
 // Helper functions declarations
 void checkIaqSensorStatus(void);
@@ -44,71 +53,16 @@ char msg[50];
 int value = 0;
 bool brokerIsOnline = false;
 
-// Create an object of the class Bsec
-Bsec iaqSensor;
-
-String output;
-int LED_BUILTIN = 2;
-
-int const TIMEOUT_MS = 10000;
-
-float celsiusToFahrenheit(float celsius) {
+float celsiusToFahrenheit(float celsius)
+{
   return ((celsius * 1.8) + 32);
 }
 
-float calcAltitude(float pressure) {
-  const float sea_level_pressure = 1010; // hPa (Auburn - 500m)
-  pressure = pressure * 0.01; // Convert Pa to hPa
+float calcAltitude(float pressure)
+{
+  const float sea_level_pressure = 1010;                             // hPa (Auburn - 500m)
+  pressure = pressure * 0.01;                                        // Convert Pa to hPa
   return 44330 * (1.0 - pow(pressure / sea_level_pressure, 0.1903)); // Altitude in meters (https://github.com/adafruit/Adafruit_CircuitPython_BME680/)
-}
-
-bool readEnvFile(const char* filename, String& wifiSsid, String& wifiPass,String& mqttServer,int& mqttPort, String& mqttUser, String& mqttPass, String& influxdbServer, String& influxdbPort, String& influxdbUser, String& influxdbPass) {
-    if (!SPIFFS.begin(true))
-    {
-      Serial.println("An Error has occurred while mounting SPIFFS");
-      return false;
-    }
-    
-    File file = SPIFFS.open(filename, "r");
-    if (!file) {
-        Serial.println("Unable to open file.");
-        return false;
-    }
-
-    while (file.available()) {
-        String line = file.readStringUntil('\n');
-        int pos = line.indexOf('=');
-        if (pos != -1) {
-            String key = line.substring(0, pos);
-            String value = line.substring(pos + 1);
-            value.trim();  // Remove any trailing newline characters
-
-            if (key == "WIFI_SSID") {
-                wifiSsid = value;
-            } else if (key == "WIFI_PASSWORD") {
-                wifiPass = value;
-            } else if (key == "MQTT_SERVER") {
-            mqttUser = value;
-            } else if (key == "MQTT_PORT") {
-                mqttUser = value.toInt();
-            } else if (key == "MQTT_USERNAME") {
-                mqttUser = value;
-            } else if (key == "MQTT_PASSWORD") {
-                mqttPass = value;
-            } else if (key == "INFLUXDB_SERVER") {
-                influxdbServer = value;
-            } else if (key == "INFLUXDB_PORT") {
-                influxdbPort = value;
-            } else if (key == "INFLUXDB_USER") {
-                influxdbUser = value;
-            } else if (key == "INFLUXDB_PASS") {
-                influxdbPass = value;
-            }
-        }
-    }
-
-    file.close();
-    return true;
 }
 
 // TODO: Move all MQTT code to separate class file
@@ -120,11 +74,11 @@ void reconnectMQTT()
   // Loop until we're reconnected
   while (!client.connected())
   {
-    Serial.println("Attempting MQTT connection...");
+    Serial.print("\nAttempting MQTT connection... ");
     if (retryCount < MAX_RETRY)
     {
       // Attempt to connect
-      if (client.connect(hostname.c_str(), MQTT_USER.c_str(), MQTT_PASS.c_str()))
+      if (client.connect(hostname.c_str(), mqtt_user.c_str(), mqtt_pass.c_str()))
       {
         Serial.println("connected");
         // Subscribe
@@ -146,8 +100,8 @@ void reconnectMQTT()
         Serial.print(client.state());
         Serial.println(" try again in " + String(TIMEOUT_MS / 1000) + " seconds");
         retryCount++;
-        // Wait 10 seconds before retrying
-        errLeds(2, TIMEOUT_MS); // FIX: remove "magic" number for LED pin when converting to a class
+        // Wait TIMEOUT_MS seconds before retrying
+        errLeds(LED_BUILTIN, TIMEOUT_MS);
       }
     }
     else
@@ -167,7 +121,6 @@ void callback(char *topic, byte *message, unsigned int length)
   Serial.print("Message arrived on topic: ");
   Serial.print(topic);
   Serial.print(". Message: ");
-
 
   for (int i = 0; i < length; i++)
   {
@@ -233,7 +186,6 @@ void callback(char *topic, byte *message, unsigned int length)
       doc["breathVocEquivalent"] = iaqSensor.breathVocEquivalent;
       doc["gasResistance"] = iaqSensor.gasResistance;
       doc["gasPercentage"] = iaqSensor.gasPercentage;
-
 
       serializeJson(doc, pubMessage);
 
@@ -308,7 +260,7 @@ void callback(char *topic, byte *message, unsigned int length)
       preferences.begin("esp32", false);
       preferences.putString("hostname", hostname);
       preferences.end();
-      initWifi(LED_BUILTIN, hostname, SSID, SSID_PASSWD);
+      initWifi(LED_BUILTIN, hostname, ssid, ssid_passwd);
       delay(100);
       reconnectMQTT();
     }
@@ -357,8 +309,6 @@ void callback(char *topic, byte *message, unsigned int length)
   }
 }
 
-
-
 void setup()
 {
   /* Initializes the Serial communication */
@@ -387,8 +337,7 @@ void setup()
     }
   }
 
-  // TODO: Keep secrets in a separate file on flash memory that can be read from
-  readEnvFile(SPIFFS_SECRETS_PATH, SSID, SSID_PASSWD, MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASS, INFLUXDB_SERVER, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASS);
+  readConfigFile(ssid, ssid_passwd, mqtt_server, mqtt_port, mqtt_user, mqtt_pass, influxdb_server, influxdb_port, influxdb_user, influxdb_pass);
 
   if (preferences.isKey("hostname"))
   {
@@ -403,9 +352,9 @@ void setup()
   // Close flash storage filesystem
   preferences.end();
 
-  initWifi(LED_BUILTIN, hostname, SSID, SSID_PASSWD);
+  initWifi(LED_BUILTIN, hostname, ssid, ssid_passwd);
 
-  client.setServer(MQTT_SERVER.c_str(), MQTT_PORT);
+  client.setServer(mqtt_server.c_str(), mqtt_port);
   client.setCallback(callback);
 
   iaqSensor.begin(BME680_I2C_ADDR_LOW, Wire);
@@ -438,7 +387,6 @@ void setup()
   digitalWrite(LED_BUILTIN, LOW);
 }
 
-     
 void loop()
 {
   unsigned long time_trigger = millis();
@@ -446,13 +394,15 @@ void loop()
 
   if (!WiFi.isConnected())
   {
-    initWifi(LED_BUILTIN, hostname, String(SSID), String(SSID_PASSWD));
+    initWifi(LED_BUILTIN, hostname, String(ssid), String(ssid_passwd));
   }
 
   if (!client.connected())
   {
     reconnectMQTT();
-  } else {
+  }
+  else
+  {
     client.loop();
   }
 
