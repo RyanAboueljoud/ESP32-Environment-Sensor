@@ -13,16 +13,22 @@
 
 #define BME680_I2C_ADDR_LOW 0x77
 
+const char *SPIFFS_SECRETS_PATH = "/.secrets.env"; // Path on the SPIFFS file system intended for SPI NOR flash devices on embedded targets.
+
 // Wi-Fi Network Connection Configuration
-const char *SSID = "ssid";
-const char *SSID_PASSWD = "ssid_password";
+String SSID;
+String SSID_PASSWD;
 String hostname = "esp32";
 
 // MQTT Broker IP Address and Login
-const char *MQTT_SERVER = "127.0.0.1";
-const int MQTT_PORT = 1883;
-const char *MQTT_USER = "mqtt_user";
-const char *MQTT_PASS = "mqtt_pass";
+String MQTT_SERVER;
+int MQTT_PORT = 1883;
+String MQTT_USER;
+String MQTT_PASS;
+String INFLUXDB_SERVER;
+String INFLUXDB_PORT;
+String INFLUXDB_USER;
+String INFLUXDB_PASS;
 
 Preferences preferences;
 
@@ -56,7 +62,7 @@ float calcAltitude(float pressure) {
   return 44330 * (1.0 - pow(pressure / sea_level_pressure, 0.1903)); // Altitude in meters (https://github.com/adafruit/Adafruit_CircuitPython_BME680/)
 }
 
-bool readEnvFile(const char* filename, String& wifiSsid, String& wifiPass,String& mqttServer,String& mqttPort, String& mqttUser, String& mqttPass) {
+bool readEnvFile(const char* filename, String& wifiSsid, String& wifiPass,String& mqttServer,int& mqttPort, String& mqttUser, String& mqttPass, String& influxdbServer, String& influxdbPort, String& influxdbUser, String& influxdbPass) {
     if (!SPIFFS.begin(true))
     {
       Serial.println("An Error has occurred while mounting SPIFFS");
@@ -84,11 +90,19 @@ bool readEnvFile(const char* filename, String& wifiSsid, String& wifiPass,String
             } else if (key == "MQTT_SERVER") {
             mqttUser = value;
             } else if (key == "MQTT_PORT") {
-                mqttUser = value;
+                mqttUser = value.toInt();
             } else if (key == "MQTT_USERNAME") {
                 mqttUser = value;
             } else if (key == "MQTT_PASSWORD") {
                 mqttPass = value;
+            } else if (key == "INFLUXDB_SERVER") {
+                influxdbServer = value;
+            } else if (key == "INFLUXDB_PORT") {
+                influxdbPort = value;
+            } else if (key == "INFLUXDB_USER") {
+                influxdbUser = value;
+            } else if (key == "INFLUXDB_PASS") {
+                influxdbPass = value;
             }
         }
     }
@@ -110,7 +124,7 @@ void reconnectMQTT()
     if (retryCount < MAX_RETRY)
     {
       // Attempt to connect
-      if (client.connect(hostname.c_str(), MQTT_USER, MQTT_PASS))
+      if (client.connect(hostname.c_str(), MQTT_USER.c_str(), MQTT_PASS.c_str()))
       {
         Serial.println("connected");
         // Subscribe
@@ -374,7 +388,7 @@ void setup()
   }
 
   // TODO: Keep secrets in a separate file on flash memory that can be read from
-  // readEnvFile("/.secrets.env", ssid, ssid_passwd, MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASS);
+  readEnvFile(SPIFFS_SECRETS_PATH, SSID, SSID_PASSWD, MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASS, INFLUXDB_SERVER, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASS);
 
   if (preferences.isKey("hostname"))
   {
@@ -391,7 +405,7 @@ void setup()
 
   initWifi(LED_BUILTIN, hostname, SSID, SSID_PASSWD);
 
-  client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setServer(MQTT_SERVER.c_str(), MQTT_PORT);
   client.setCallback(callback);
 
   iaqSensor.begin(BME680_I2C_ADDR_LOW, Wire);
