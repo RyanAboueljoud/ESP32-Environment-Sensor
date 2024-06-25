@@ -50,7 +50,9 @@ void initWifi(int LED, String hostname, String SSID, String SSID_PASSWD)
     ledStatus = !ledStatus;
     digitalWrite(LED, ledStatus);
   }
-  Serial.println(WiFi.localIP() + " " + hostname);
+  Serial.print(WiFi.localIP());
+  Serial.print(" ");
+  Serial.println(hostname);
 
   preferences.begin("esp32", false);
   preferences.putString("ssid", SSID);
