@@ -1,15 +1,6 @@
 // initWifi.cpp
 #include "initWifi.h"
 
-void errLeds(int ERR_LED)
-{
-  pinMode(ERR_LED, OUTPUT);
-  digitalWrite(ERR_LED, HIGH);
-  delay(100);
-  digitalWrite(ERR_LED, LOW);
-  delay(100);
-}
-
 void initWifi(int LED, String hostname, String SSID, String SSID_PASSWD)
 {
   int ledStatus = HIGH;
@@ -30,7 +21,7 @@ void initWifi(int LED, String hostname, String SSID, String SSID_PASSWD)
 
   digitalWrite(LED, ledStatus);
   WiFi.begin(SSID, SSID_PASSWD);
-  Serial.print("Connecting to WiFi ..");
+  Serial.print("Connecting to " + SSID + " ..");
 
   startTime = millis();
   while (WiFi.status() != WL_CONNECTED)
@@ -40,13 +31,11 @@ void initWifi(int LED, String hostname, String SSID, String SSID_PASSWD)
     delay(1000);
     if (count > maxRetry)
     {
-      Serial.println("\nUnable to connect to WiFi - Retrying in " + (String)(timeout_ms / 60000) + " minutes...");
-      while ((millis() - startTime) < timeout_ms)
-      {
-        errLeds(LED);
-      }
-      initWifi(LED, hostname, SSID, SSID_PASSWD);
+      Serial.println("\nUnable to connect to  " + SSID + " - Retrying in " + (String)(timeout_ms / 60000) + " minutes...");
+      errLeds(LED, timeout_ms);
+      Serial.print("\nConnecting to " + SSID + " ..");
     }
+    // Blink LED
     ledStatus = !ledStatus;
     digitalWrite(LED, ledStatus);
   }
