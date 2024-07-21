@@ -1,16 +1,12 @@
 #include <Arduino.h>
 #include <bsec.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
 #include <Preferences.h>
 #include <nvs_flash.h>
-#include <SPIFFS.h>
-#include <ArduinoJson.h>
 
 #include "libs/initWifi/initWifi.h"
 #include "libs/readConfigFile/readConfigFile.h"
+#include "libs/mqtt/mqtt.h"
 #include "libs/errLeds/errLeds.h"
-// #include "libs/mqtt/mqtt.h" // TODO: Rewrite as a class
 
 #define BME680_I2C_ADDR_LOW 0x77
 
@@ -29,11 +25,16 @@ String ssid;
 String ssid_passwd;
 String hostname = "esp32";
 
+WiFiClient espClient;
+PubSubClient client(espClient);
+
 // MQTT Broker IP Address and Login
 String mqtt_server;
 int mqtt_port;
 String mqtt_user;
 String mqtt_pass;
+
+MQTT mqtt;
 
 // InfluxDB server address and login
 String influxdb_server;
@@ -43,271 +44,6 @@ String influxdb_pass;
 
 // Helper functions declarations
 void checkIaqSensorStatus(void);
-void errLeds(void);
-
-// Prepare MQTT Client Configurations
-WiFiClient espClient;
-PubSubClient client(espClient);
-long lastMsg = 0;
-char msg[50];
-int value = 0;
-bool brokerIsOnline = false;
-
-float celsiusToFahrenheit(float celsius)
-{
-  return ((celsius * 1.8) + 32);
-}
-
-float calcAltitude(float pressure)
-{
-  const float sea_level_pressure = 1010;                             // hPa (Auburn - 500m)
-  pressure = pressure * 0.01;                                        // Convert Pa to hPa
-  return 44330 * (1.0 - pow(pressure / sea_level_pressure, 0.1903)); // Altitude in meters (https://github.com/adafruit/Adafruit_CircuitPython_BME680/)
-}
-
-// TODO: Move all MQTT code to separate class file
-void reconnectMQTT()
-{
-  int const MAX_RETRY = 3;
-  int retryCount = 0;
-
-  // Loop until we're reconnected
-  while (!client.connected())
-  {
-    Serial.print("\nAttempting MQTT connection... ");
-    if (retryCount < MAX_RETRY)
-    {
-      // Attempt to connect
-      if (client.connect(hostname.c_str(), mqtt_user.c_str(), mqtt_pass.c_str()))
-      {
-        Serial.println("connected");
-        // Subscribe
-        client.subscribe((hostname + "/get_sensor_values").c_str());
-        client.subscribe((hostname + "/get_iaq").c_str());
-        client.subscribe((hostname + "/get_gas").c_str());
-        client.subscribe((hostname + "/get_pressure").c_str());
-        client.subscribe((hostname + "/get_humidity").c_str());
-        client.subscribe((hostname + "/get_temperature").c_str());
-        client.subscribe((hostname + "/update_hostname").c_str());
-        client.subscribe((hostname + "/restart").c_str());
-        client.subscribe((hostname + "/reset").c_str());
-        client.subscribe("all/get_hostname");
-        client.subscribe("homeassistant/status");
-      }
-      else
-      {
-        Serial.print("failed, rc=");
-        Serial.print(client.state());
-        Serial.println(" try again in " + String(TIMEOUT_MS / 1000) + " seconds");
-        retryCount++;
-        // Wait TIMEOUT_MS seconds before retrying
-        errLeds(LED_BUILTIN, TIMEOUT_MS);
-      }
-    }
-    else
-    {
-      Serial.println("Reached max retry limit (" + String(MAX_RETRY) + "): Skipping MQTT connection for now...");
-      return;
-    }
-  }
-}
-
-void callback(char *topic, byte *message, unsigned int length)
-{
-  String messageTemp;
-  String pubMessage;
-  String hostTopic;
-  digitalWrite(LED_BUILTIN, HIGH);
-  Serial.print("Message arrived on topic: ");
-  Serial.print(topic);
-  Serial.print(". Message: ");
-
-  for (int i = 0; i < length; i++)
-  {
-    Serial.print((char)message[i]);
-    messageTemp += (char)message[i];
-  }
-  Serial.println();
-
-  if (String(topic) == hostname + "/get_sensor_values")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["iaq"] = iaqSensor.iaq;
-      doc["staticIaq"] = iaqSensor.staticIaq;
-      doc["iaqAccuracy"] = iaqSensor.iaqAccuracy;
-      doc["stabStatus"] = iaqSensor.stabStatus;
-      doc["gasResistance"] = iaqSensor.gasResistance;
-      doc["co2Equivalent"] = iaqSensor.co2Equivalent;
-      doc["breathVocEquivalent"] = iaqSensor.breathVocEquivalent;
-      doc["temperature"] = iaqSensor.temperature;
-      doc["pressure"] = iaqSensor.pressure;
-      doc["humidity"] = iaqSensor.humidity;
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/sensor";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  if (String(topic) == hostname + "/get_iaq")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current IAQ sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["iaq"] = iaqSensor.iaq;
-      doc["staticIaq"] = iaqSensor.staticIaq;
-      doc["iaqAccuracy"] = iaqSensor.iaqAccuracy;
-      doc["runInStatus"] = iaqSensor.runInStatus;
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/iaq";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  if (String(topic) == hostname + "/get_gas")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current gas sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["co2Equivalent"] = iaqSensor.co2Equivalent;
-      doc["breathVocEquivalent"] = iaqSensor.breathVocEquivalent;
-      doc["gasResistance"] = iaqSensor.gasResistance;
-      doc["gasPercentage"] = iaqSensor.gasPercentage;
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/gas";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  if (String(topic) == hostname + "/get_temperature")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current gas sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["rawTemperature"] = iaqSensor.rawTemperature;
-      doc["temperature_C"] = iaqSensor.temperature;
-      doc["temperature_F"] = celsiusToFahrenheit(iaqSensor.temperature);
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/temperature";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  if (String(topic) == hostname + "/get_pressure")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current pressure sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["pressure"] = iaqSensor.pressure;
-      doc["altitude"] = calcAltitude(iaqSensor.pressure);
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/pressure";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  if (String(topic) == hostname + "/get_humidity")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Publishing current humidity sensor values...");
-      JsonDocument doc;
-      // Add values to the JSON document - Max Keys: 10
-      doc["rawHumidity"] = iaqSensor.rawHumidity;
-      doc["humidity"] = iaqSensor.humidity;
-
-      serializeJson(doc, pubMessage);
-
-      hostTopic = hostname + "/humidity";
-
-      client.publish(hostTopic.c_str(), pubMessage.c_str());
-    }
-  }
-
-  // If a message is received on the topic [hostname]/output, you check if the message is either "on" or "off".
-  // Changes the output state according to the message
-  if (String(topic) == hostname + "/update_hostname")
-  {
-    if (!messageTemp.isEmpty())
-    {
-      hostname = messageTemp;
-      preferences.begin("esp32", false);
-      preferences.putString("hostname", hostname);
-      preferences.end();
-      initWifi(LED_BUILTIN, hostname, ssid, ssid_passwd);
-      delay(100);
-      reconnectMQTT();
-    }
-  }
-
-  // If a message is received on the topic [hostname]/output, you check if the message is either "on" or "off".
-  // Changes the output state according to the message
-  if (String(topic) == hostname + "/restart")
-  {
-    if (messageTemp == "true")
-    {
-      Serial.println("Restarting device...");
-      delay(1000);
-      ESP.restart();
-    }
-  }
-
-  if (String(topic) == hostname + "/reset")
-  {
-    if (messageTemp == "true")
-    {
-      preferences.begin("esp32", false);
-      preferences.putBool("reset", true);
-      preferences.end();
-      delay(100);
-      ESP.restart();
-    }
-  }
-
-  // If a message is received on the topic all/output, you check if the message is either "on" or "off".
-  // Changes the output state according to the message
-  if (String(topic) == "all/get_hostname")
-  {
-    client.publish("all/broadcast_hostname", hostname.c_str());
-  }
-
-  if (String(topic) == "homeassistant/status")
-  {
-    if (messageTemp == "online")
-    {
-    }
-    if (messageTemp == "offline")
-    {
-      delay(10000);
-    }
-  }
-}
 
 void setup()
 {
@@ -326,7 +62,6 @@ void setup()
   {
     if (preferences.getBool("reset") == true)
     {
-
       preferences.end();
 
       Serial.println("Erasing the NVS partition...");
@@ -342,20 +77,16 @@ void setup()
   if (preferences.isKey("hostname"))
   {
     hostname = preferences.getString("hostname");
-    Serial.println("hostname loaded from flash memory: " + hostname);
+    Serial.println("\nhostname loaded from flash memory: " + hostname + "\n");
   }
   else
   {
     preferences.putString("hostname", hostname);
   }
-
   // Close flash storage filesystem
   preferences.end();
 
   initWifi(LED_BUILTIN, hostname, ssid, ssid_passwd);
-
-  client.setServer(mqtt_server.c_str(), mqtt_port);
-  client.setCallback(callback);
 
   iaqSensor.begin(BME680_I2C_ADDR_LOW, Wire);
   output = "\nBSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
@@ -384,6 +115,9 @@ void setup()
   // Print the header
   output = "Timestamp [ms], IAQ, IAQ accuracy, Static IAQ, CO2 equivalent, breath VOC equivalent, raw temp[°C], pressure [hPa], raw relative humidity [%], gas [Ohm], Stab Status, run in status, comp temp[°C], comp humidity [%], gas percentage";
   Serial.println(output);
+  
+  mqtt.setup(client, mqtt_server, mqtt_port, mqtt_user, mqtt_pass, iaqSensor);
+
   digitalWrite(LED_BUILTIN, LOW);
 }
 
@@ -397,13 +131,13 @@ void loop()
     initWifi(LED_BUILTIN, hostname, String(ssid), String(ssid_passwd));
   }
 
-  if (!client.connected())
+  if (!mqtt.isConnected())
   {
-    reconnectMQTT();
+    mqtt.reconnectMQTT();
   }
   else
   {
-    client.loop();
+    mqtt.loop();
   }
 
   if (iaqSensor.run())
@@ -443,8 +177,7 @@ void checkIaqSensorStatus(void)
     {
       output = "BSEC error code : " + String(iaqSensor.bsecStatus);
       Serial.println(output);
-      for (;;)
-        errLeds(); /* Halt in case of failure */
+      errLeds(LED_BUILTIN, TIMEOUT_MS); /* Halt in case of failure */
     }
     else
     {
@@ -459,8 +192,7 @@ void checkIaqSensorStatus(void)
     {
       output = "BME68X error code : " + String(iaqSensor.bme68xStatus);
       Serial.println(output);
-      for (;;)
-        errLeds(); /* Halt in case of failure */
+      errLeds(LED_BUILTIN, TIMEOUT_MS); /* Halt in case of failure */
     }
     else
     {
@@ -468,13 +200,4 @@ void checkIaqSensorStatus(void)
       Serial.println(output);
     }
   }
-}
-
-void errLeds(void)
-{
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
 }
