@@ -217,7 +217,6 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
     publish("all/broadcast_hostname", hostname.c_str());
   }
 
-  // TODO: Do something on HA status change
   if (String(topic) == "homeassistant/status")
   {
     if (messageTemp == "online")
