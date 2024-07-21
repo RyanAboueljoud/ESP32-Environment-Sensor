@@ -52,16 +52,16 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["iaq"] = iaqSensor.iaq;
-      doc["staticIaq"] = iaqSensor.staticIaq;
-      doc["iaqAccuracy"] = iaqSensor.iaqAccuracy;
-      doc["stabStatus"] = iaqSensor.stabStatus;
-      doc["gasResistance"] = iaqSensor.gasResistance;
-      doc["co2Equivalent"] = iaqSensor.co2Equivalent;
-      doc["breathVocEquivalent"] = iaqSensor.breathVocEquivalent;
-      doc["temperature"] = iaqSensor.temperature;
-      doc["pressure"] = iaqSensor.pressure;
-      doc["humidity"] = iaqSensor.humidity;
+      doc["iaq"] = iaqSensor->iaq;
+      doc["staticIaq"] = iaqSensor->staticIaq;
+      doc["iaqAccuracy"] = iaqSensor->iaqAccuracy;
+      doc["stabStatus"] = iaqSensor->stabStatus;
+      doc["gasResistance"] = iaqSensor->gasResistance;
+      doc["co2Equivalent"] = iaqSensor->co2Equivalent;
+      doc["breathVocEquivalent"] = iaqSensor->breathVocEquivalent;
+      doc["temperature"] = iaqSensor->temperature;
+      doc["pressure"] = iaqSensor->pressure;
+      doc["humidity"] = iaqSensor->humidity;
 
       serializeJson(doc, pubMessage);
 
@@ -78,10 +78,10 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current IAQ sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["iaq"] = iaqSensor.iaq;
-      doc["staticIaq"] = iaqSensor.staticIaq;
-      doc["iaqAccuracy"] = iaqSensor.iaqAccuracy;
-      doc["runInStatus"] = iaqSensor.runInStatus;
+      doc["iaq"] = iaqSensor->iaq;
+      doc["staticIaq"] = iaqSensor->staticIaq;
+      doc["iaqAccuracy"] = iaqSensor->iaqAccuracy;
+      doc["runInStatus"] = iaqSensor->runInStatus;
 
       serializeJson(doc, pubMessage);
 
@@ -98,10 +98,10 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current gas sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["co2Equivalent"] = iaqSensor.co2Equivalent;
-      doc["breathVocEquivalent"] = iaqSensor.breathVocEquivalent;
-      doc["gasResistance"] = iaqSensor.gasResistance;
-      doc["gasPercentage"] = iaqSensor.gasPercentage;
+      doc["co2Equivalent"] = iaqSensor->co2Equivalent;
+      doc["breathVocEquivalent"] = iaqSensor->breathVocEquivalent;
+      doc["gasResistance"] = iaqSensor->gasResistance;
+      doc["gasPercentage"] = iaqSensor->gasPercentage;
 
       serializeJson(doc, pubMessage);
 
@@ -118,9 +118,9 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current gas sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["rawTemperature"] = iaqSensor.rawTemperature;
-      doc["temperature_C"] = iaqSensor.temperature;
-      doc["temperature_F"] = (iaqSensor.temperature * 1.8) + 32;
+      doc["rawTemperature"] = iaqSensor->rawTemperature;
+      doc["temperature_C"] = iaqSensor->temperature;
+      doc["temperature_F"] = celsiusToFahrenheit(iaqSensor->temperature);
 
       serializeJson(doc, pubMessage);
 
@@ -137,11 +137,11 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current pressure sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["pressure"] = iaqSensor.pressure;
+      doc["pressure"] = iaqSensor->pressure;
 
       // Altitude in meters (https://github.com/adafruit/Adafruit_CircuitPython_BME680/)
-      pressure_hPa = iaqSensor.pressure * 0.01; // Convert Pa to hPa
-      doc["altitude"] = 44330 * (1.0 - pow(pressure_hPa / SEA_LVL_PRESSURE, 0.1903));
+      pressure_hPa = iaqSensor->pressure * 0.01; // Convert Pa to hPa
+      doc["altitude"] = calcAltitude(iaqSensor->pressure);
 
       serializeJson(doc, pubMessage);
 
@@ -158,8 +158,8 @@ void MQTT::callback(const char *topic, byte *payload, unsigned int length)
       Serial.println("Publishing current humidity sensor values...");
       JsonDocument doc;
       // Add values to the JSON document - Max Keys: 10
-      doc["rawHumidity"] = iaqSensor.rawHumidity;
-      doc["humidity"] = iaqSensor.humidity;
+      doc["rawHumidity"] = iaqSensor->rawHumidity;
+      doc["humidity"] = iaqSensor->humidity;
 
       serializeJson(doc, pubMessage);
 
@@ -271,32 +271,32 @@ void MQTT::reconnectMQTT()
   String hostname = getHostname();
 
   // Loop until we're reconnected
-  while (!client.connected())
+  while (!client->connected())
   {
     Serial.print("\nAttempting MQTT connection...");
     if (retryCount < MAX_RETRY)
     {
       // Attempt to connect
-      if (client.connect(hostname.c_str(), mqtt_user.c_str(), mqtt_pass.c_str()))
+      if (client->connect(hostname.c_str(), mqtt_user.c_str(), mqtt_pass.c_str()))
       {
         Serial.println("connected to: " + mqtt_server + " as " + hostname);
         // Subscribe
-        client.subscribe((hostname + "/get_sensor_values").c_str());
-        client.subscribe((hostname + "/get_iaq").c_str());
-        client.subscribe((hostname + "/get_gas").c_str());
-        client.subscribe((hostname + "/get_pressure").c_str());
-        client.subscribe((hostname + "/get_humidity").c_str());
-        client.subscribe((hostname + "/get_temperature").c_str());
-        client.subscribe((hostname + "/update_hostname").c_str());
-        client.subscribe((hostname + "/restart").c_str());
-        client.subscribe((hostname + "/reset").c_str());
-        client.subscribe("all/get_hostname");
-        client.subscribe("homeassistant/status");
+        client->subscribe((hostname + "/get_sensor_values").c_str());
+        client->subscribe((hostname + "/get_iaq").c_str());
+        client->subscribe((hostname + "/get_gas").c_str());
+        client->subscribe((hostname + "/get_pressure").c_str());
+        client->subscribe((hostname + "/get_humidity").c_str());
+        client->subscribe((hostname + "/get_temperature").c_str());
+        client->subscribe((hostname + "/update_hostname").c_str());
+        client->subscribe((hostname + "/restart").c_str());
+        client->subscribe((hostname + "/reset").c_str());
+        client->subscribe("all/get_hostname");
+        client->subscribe("homeassistant/status");
       }
       else
       {
         Serial.print("failed, rc=");
-        Serial.print(client.state());
+        Serial.print(client->state());
         Serial.println(" try again in " + String(TIMEOUT_MS / 1000) + " seconds");
         retryCount++;
         errLeds(LED_BUILTIN, TIMEOUT_MS);
@@ -311,7 +311,7 @@ void MQTT::reconnectMQTT()
 
 bool MQTT::isConnected()
 {
-  if (!client.connected())
+  if (!client->connected())
   {
     return false;
   }
@@ -323,7 +323,7 @@ bool MQTT::isConnected()
 
 void MQTT::loop()
 {
-  client.loop();
+  client->loop();
 }
 
 /**
@@ -338,5 +338,5 @@ void MQTT::loop()
  */
 bool MQTT::publish(const char *topic, const char *payload)
 {
-  return client.publish(topic, payload);
+  return client->publish(topic, payload);
 }

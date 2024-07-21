@@ -116,7 +116,7 @@ void setup()
   output = "Timestamp [ms], IAQ, IAQ accuracy, Static IAQ, CO2 equivalent, breath VOC equivalent, raw temp[°C], pressure [hPa], raw relative humidity [%], gas [Ohm], Stab Status, run in status, comp temp[°C], comp humidity [%], gas percentage";
   Serial.println(output);
 
-  mqtt.setup(client, mqtt_server, mqtt_port, mqtt_user, mqtt_pass, iaqSensor);
+  mqtt.setup(&client, mqtt_server, mqtt_port, mqtt_user, mqtt_pass, &iaqSensor);
 
   digitalWrite(LED_BUILTIN, LOW);
 }

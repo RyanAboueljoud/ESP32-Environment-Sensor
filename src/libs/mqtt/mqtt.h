@@ -10,13 +10,14 @@
 
 #include "../initWifi/initWifi.h"
 #include "../errLeds/errLeds.h"
+#include "../utils/utils.h"
 
 class MQTT : private WiFiClient
 {
 private:
     Preferences pref;
-    PubSubClient client;
-    Bsec iaqSensor;
+    PubSubClient *client;
+    Bsec *iaqSensor;
     String mqtt_server, mqtt_user, mqtt_pass;
     int mqtt_port;
     const int TIMEOUT_MS = 10000; // 10 seconds
@@ -26,19 +27,19 @@ private:
     void callback(const char *topic, byte *payload, unsigned int length);
 
 public:
-    void setup(PubSubClient newClient, String serverAddr, int port, String user, String pass, Bsec iaq)
+    void setup(PubSubClient *newClient, String serverAddr, int port, String user, String pass, Bsec *iaq)
     {
         mqtt_user = user;
         mqtt_pass = pass;
         mqtt_server = serverAddr;
         mqtt_port = port;
         client = newClient;
-        client.setServer(mqtt_server.c_str(), mqtt_port);
+        client->setServer(mqtt_server.c_str(), mqtt_port);
 
         using std::placeholders::_1;
         using std::placeholders::_2;
         using std::placeholders::_3;
-        client.setCallback(std::bind(&MQTT::callback, this, _1, _2, _3));
+        client->setCallback(std::bind(&MQTT::callback, this, _1, _2, _3));
 
         reconnectMQTT();
 

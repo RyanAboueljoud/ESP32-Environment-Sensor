@@ -1,4 +1,4 @@
-// mqtt.h
+// errLeds.h
 #ifndef ERR_LEDS_H
 #define ERR_LEDS_H
 
