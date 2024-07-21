@@ -11,7 +11,6 @@
 #include "../initWifi/initWifi.h"
 #include "../errLeds/errLeds.h"
 
-
 class MQTT : private WiFiClient
 {
 private:
@@ -20,7 +19,7 @@ private:
     Bsec iaqSensor;
     String mqtt_server, mqtt_user, mqtt_pass;
     int mqtt_port;
-    const int TIMEOUT_MS = 10000;   // 10 seconds
+    const int TIMEOUT_MS = 10000; // 10 seconds
     const int LED_BUILTIN = 2;
     bool isBrokerOnline = false;
 

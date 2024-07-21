@@ -322,7 +322,8 @@ bool MQTT::isConnected()
   }
 }
 
-void MQTT::loop(){
+void MQTT::loop()
+{
   client.loop();
 }
 
@@ -340,4 +341,3 @@ bool MQTT::publish(const char *topic, const char *payload)
 {
   return client.publish(topic, payload);
 }
-
